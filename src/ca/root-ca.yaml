@@ -3,15 +3,22 @@ kind: ClusterIssuer
 metadata:
   name: root-ca
 spec:
-  ca:
-    secretName: root-ca-secret
-    duration: 50y
-    renewBefore: 30d
-    privateKey: |
-      -----BEGIN PRIVATE KEY-----
-      <your-private-key-here>
-      -----END PRIVATE KEY-----
-    certificate: |
-      -----BEGIN CERTIFICATE-----
-      <your-certificate-here>
-      -----END CERTIFICATE-----
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: root-ca-cert
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "Root CA"
+  duration: 438000h # 50 years
+  secretName: root-ca-key-pair
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: root-ca
+    kind: ClusterIssuer
+    group: cert-manager.io

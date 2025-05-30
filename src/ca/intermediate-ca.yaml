@@ -1,19 +1,22 @@
 apiVersion: cert-manager.io/v1
-kind: Certificate
+kind: ClusterIssuer
 metadata:
   name: intermediate-ca
+spec:
+  ca:
+    secretName: root-ca-key-pair
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: intermediate-ca-cert
   namespace: cert-manager
 spec:
-  secretName: intermediate-ca-secret
-  issuerRef:
-    name: root-ca
-    kind: ClusterIssuer
-  duration: 876000h # 100 years
-  renewBefore: 720h # 30 days
-  commonName: intermediate-ca
   isCA: true
-  usages:
-    - cert sign
-    - crl sign
-    - server auth
-    - client auth
+  commonName: "Intermediate CA"
+  duration: 438000h # 50 years
+  secretName: intermediate-ca-key-pair
+  issuerRef:
+    name: intermediate-ca
+    kind: ClusterIssuer
+    group: cert-manager.io

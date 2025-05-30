@@ -1,49 +1,120 @@
-# cert-manager-k8s Project
+# Kubernetes Certificate Management System
 
-This project is designed to create and manage certificates in a Kubernetes environment using cert-manager. It includes the setup for a root Certificate Authority (CA) and specific user certificates with defined validity periods.
+> A comprehensive solution for managing certificates in Kubernetes clusters using cert-manager
 
-## Project Structure
+## 🎯 Overview
+
+This project implements a complete PKI infrastructure for Kubernetes environments, featuring:
+- 50-year Root CA for long-term trust anchoring
+- Role-based certificate distribution
+- Environment-agnostic certificate management
+
+## 📋 Features
+
+| User Type | Certificate Validity | Use Case |
+|-----------|---------------------|----------|
+| Root CA | 50 years | Trust anchor for all certificates |
+| Admin | 15 years | Cluster administration |
+| QA Developer | 15 years | Internal development & testing |
+| External Developer | 2 years | Temporary access |
+
+## 🏗️ Project Structure
 
 ```
-cert-manager-k8s
-├── src
-│   ├── ca
-│   │   ├── root-ca.yaml         # Configuration for the root CA (50 years validity)
-│   │   └── intermediate-ca.yaml  # Configuration for the intermediate CA
-│   ├── certificates
-│   │   ├── admin-cert.yaml      # Admin user's certificate (15 years validity)
-│   │   ├── qa-dev-cert.yaml     # QA developer's certificate (15 years validity)
-│   │   └── ext-dev-cert.yaml     # External developer's certificate (2 years validity)
-│   ├── roles
-│   │   ├── admin-role.yaml       # Role definition for the admin user
-│   │   ├── qa-dev-role.yaml      # Role definition for the QA developer
-│   │   └── ext-dev-role.yaml     # Role definition for the external developer
-│   └── bindings
-│       ├── admin-binding.yaml     # Binding for the admin role
-│       ├── qa-dev-binding.yaml    # Binding for the QA developer role
-│       └── ext-dev-binding.yaml    # Binding for the external developer role
-├── scripts
-│   ├── create-ca.sh              # Script to create root and intermediate CAs
-│   └── create-certs.sh           # Script to create user certificates
-└── README.md                     # Documentation for the project
+cert-manager-k8s/
+├── src/
+│   ├── ca/                      # Certificate Authority configs
+│   │   ├── root-ca.yaml         # Root CA (50 years)
+│   │   └── intermediate-ca.yaml # Intermediate CA
+│   │
+│   ├── certificates/            # User certificates
+│   │   ├── admin-cert.yaml      # Admin (15 years)
+│   │   ├── qa-dev-cert.yaml     # QA Dev (15 years)
+│   │   └── ext-dev-cert.yaml    # External Dev (2 years)
+│   │
+│   ├── roles/                   # RBAC configurations
+│   │   ├── admin-role.yaml
+│   │   ├── qa-dev-role.yaml
+│   │   └── ext-dev-role.yaml
+│   │
+│   └── bindings/               # Role bindings
+│       ├── admin-binding.yaml
+│       ├── qa-dev-binding.yaml
+│       └── ext-dev-binding.yaml
+│
+├── scripts/
+│   ├── create-ca.sh           # CA setup script
+│   └── create-certs.sh        # Certificate generation script
+│
+└── README.md
 ```
 
-## Setup Instructions
+## 🚀 Quick Start
 
-1. **Install cert-manager**: Follow the official cert-manager installation guide to set up cert-manager in your Kubernetes cluster.
+### Prerequisites
+- Kubernetes cluster (v1.19+)
+- kubectl CLI tool
+- Helm (optional)
 
-2. **Create the Root CA**: Use the `scripts/create-ca.sh` script to generate the root and intermediate CAs.
+### Installation
 
-3. **Create User Certificates**: Run the `scripts/create-certs.sh` script to create certificates for the admin, QA developer, and external developer.
+1. **Install cert-manager**
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+```
 
-4. **Apply Configurations**: Apply the YAML files located in the `src` directory to your Kubernetes cluster to set up roles and bindings.
+2. **Deploy Root CA**
+```bash
+./scripts/create-ca.sh
+```
 
-## Usage Guidelines
+3. **Create User Certificates**
+```bash
+./scripts/create-certs.sh
+```
 
-- Ensure that the Kubernetes cluster is properly configured and that you have the necessary permissions to create resources.
-- Modify the YAML files as needed to fit your specific requirements.
-- Monitor the certificates and renew them as necessary based on their validity periods.
+4. **Apply RBAC Configurations**
+```bash
+kubectl apply -f src/roles/
+kubectl apply -f src/bindings/
+```
 
-## License
+## 🔍 Verification
 
-This project is licensed under the MIT License. See the LICENSE file for more details.
+Check certificate status:
+```bash
+kubectl get certificates -n cert-manager
+kubectl get clusterissuers
+```
+
+Verify certificate chain:
+```bash
+kubectl describe certificate admin-cert -n cert-manager
+```
+
+## ⚠️ Security Considerations
+
+- Store Root CA private key securely
+- Implement regular certificate rotation for external developers
+- Monitor certificate expiration dates
+- Keep cert-manager updated
+
+## 🔄 Certificate Renewal
+
+Certificates are automatically renewed by cert-manager when they reach 2/3 of their lifetime. Manual renewal:
+```bash
+kubectl delete secret <cert-secret-name> -n cert-manager
+```
+
+## 📚 Documentation
+
+- [cert-manager Official Docs](https://cert-manager.io/docs/)
+- [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
