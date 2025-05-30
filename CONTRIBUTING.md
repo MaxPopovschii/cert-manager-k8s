@@ -1,4 +1,3 @@
-// filepath: /home/vmaximpopovschii/cert-manager-k8s/CONTRIBUTING.md
 # Contributing to Kubernetes Certificate Management System
 
 ## 🎯 Guidelines
