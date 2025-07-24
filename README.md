@@ -18,103 +18,104 @@ This project implements a complete PKI infrastructure for Kubernetes environment
 | QA Developer | 15 years | Internal development & testing |
 | External Developer | 2 years | Temporary access |
 
-## 🏗️ Project Structure
-
-```
-cert-manager-k8s/
-├── src/
-│   ├── ca/                      # Certificate Authority configs
-│   │   ├── root-ca.yaml         # Root CA (50 years)
-│   │   └── intermediate-ca.yaml # Intermediate CA
-│   │
-│   ├── certificates/            # User certificates
-│   │   ├── admin-cert.yaml      # Admin (15 years)
-│   │   ├── qa-dev-cert.yaml     # QA Dev (15 years)
-│   │   └── ext-dev-cert.yaml    # External Dev (2 years)
-│   │
-│   ├── roles/                   # RBAC configurations
-│   │   ├── admin-role.yaml
-│   │   ├── qa-dev-role.yaml
-│   │   └── ext-dev-role.yaml
-│   │
-│   └── bindings/               # Role bindings
-│       ├── admin-binding.yaml
-│       ├── qa-dev-binding.yaml
-│       └── ext-dev-binding.yaml
-│
-├── scripts/
-│   ├── create-ca.sh           # CA setup script
-│   └── create-certs.sh        # Certificate generation script
-│
-└── README.md
-```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Kubernetes cluster (v1.19+)
 - kubectl CLI tool
-- Helm (optional)
 
-### Installation
+1. Generare CA
 
-1. **Install cert-manager**
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-```
+# Genera la chiave privata della CA (4096 bit)
+openssl genrsa -out ca.key 4096
 
-2. **Deploy Root CA**
-```bash
-./scripts/create-ca.sh
-```
+# Genera il certificato root autofirmato della CA valido 50 anni (18250 giorni)
+openssl req -x509 -new -nodes -key ca.key -sha256 -days 18250 -out ca.crt \
+  -subj "/CN=kubernetes-ca"
 
-3. **Create User Certificates**
-```bash
-./scripts/create-certs.sh
-```
+2. Creare configurazione OpenSSL per certificato API server con SAN (Subject Alternative Names)
 
-4. **Apply RBAC Configurations**
-```bash
-kubectl apply -f src/roles/
-kubectl apply -f src/bindings/
-```
+Crea un file chiamato apiserver-ext.cnf con questo contenuto (modifica IP e DNS se serve):
 
-## 🔍 Verification
+[ req ]
+default_bits       = 2048
+prompt             = no
+default_md         = sha256
+req_extensions     = req_ext
+distinguished_name = dn
 
-Check certificate status:
-```bash
-kubectl get certificates -n cert-manager
-kubectl get clusterissuers
-```
+[ dn ]
+CN = kubernetes
 
-Verify certificate chain:
-```bash
-kubectl describe certificate admin-cert -n cert-manager
-```
+[ req_ext ]
+subjectAltName = @alt_names
 
-## ⚠️ Security Considerations
+[ alt_names ]
+DNS.1 = kubernetes
+DNS.2 = kubernetes.default
+DNS.3 = kubernetes.default.svc
+DNS.4 = kubernetes.default.svc.cluster.local
+DNS.5 = controlplane
+IP.1  = 127.0.0.1
+IP.2  = <IP_PRIVATO_DEL_MASTER>
 
-- Store Root CA private key securely
-- Implement regular certificate rotation for external developers
-- Monitor certificate expiration dates
-- Keep cert-manager updated
+3. Generare chiave e CSR per API server
+openssl genrsa -out apiserver.key 2048
 
-## 🔄 Certificate Renewal
+openssl req -new -key apiserver.key -out apiserver.csr -config apiserver-ext.cnf
 
-Certificates are automatically renewed by cert-manager when they reach 2/3 of their lifetime. Manual renewal:
-```bash
-kubectl delete secret <cert-secret-name> -n cert-manager
-```
+4. Firmare il certificato API server con la CA
+openssl x509 -req -in apiserver.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out apiserver.crt -days 36500 -extensions req_ext -extfile apiserver-ext.cnf
 
-## 📚 Documentation
+5. Generare e firmare certificati client e di sistema
+Esempio per admin (durata 15 anni):
 
-- [cert-manager Official Docs](https://cert-manager.io/docs/)
-- [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+openssl genrsa -out admin.key 2048
 
-## 📄 License
+openssl req -new -key admin.key -out admin.csr -subj "/CN=admin"
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+openssl x509 -req -in admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out admin.crt -days 5475 -extfile <(printf "extendedKeyUsage=clientAuth")
+  
+Per qa-developer (15 anni):
+openssl genrsa -out qa-developer.key 2048
 
-## 🤝 Contributing
+openssl req -new -key qa-developer.key -out qa-developer.csr -subj "/CN=qa-developer"
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+openssl x509 -req -in qa-developer.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out qa-developer.crt -days 5475 -extfile <(printf "extendedKeyUsage=clientAuth")
+
+Per external-developer (2 anni):
+
+openssl genrsa -out external-developer.key 2048
+
+openssl req -new -key external-developer.key -out external-developer.csr -subj "/CN=external-developer"
+
+openssl x509 -req -in external-developer.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out external-developer.crt -days 730 -extfile <(printf "extendedKeyUsage=clientAuth")
+
+6. Rigenerare i kubeconfig client
+
+
+Esempio per admin:
+
+kubectl config set-cluster kubernetes \
+  --certificate-authority=ca.crt \
+  --server=https://controlplane:6443 \
+  --kubeconfig=admin.kubeconfig \
+  --embed-certs=true
+
+kubectl config set-credentials admin \
+  --client-certificate=admin.crt \
+  --client-key=admin.key \
+  --kubeconfig=admin.kubeconfig \
+  --embed-certs=true
+
+kubectl config set-context admin@kubernetes \
+  --cluster=kubernetes \
+  --user=admin \
+  --kubeconfig=admin.kubeconfig
+
+kubectl config use-context admin@kubernetes --kubeconfig=admin.kubeconfig
