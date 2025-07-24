@@ -12,7 +12,7 @@ openssl genrsa -out ca.key 4096
 
 # Genera il certificato autofirmato valido 50 anni
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 18250 -out ca.crt \
-  -subj "/CN=kubernetes-ca"
+  -subj "/CN=kubernetes"
 ```
 
 ---
