@@ -1,43 +1,27 @@
-# Kubernetes Certificate Management System
+# ✍️ Kubernetes Custom CA & Certificate Management Guide
 
-> A comprehensive solution for managing certificates in Kubernetes clusters using cert-manager
+Questa guida documenta tutti i passaggi per generare una CA personalizzata, firmare i certificati principali del cluster Kubernetes e quelli degli utenti, e aggiornare la configurazione (`kubeconfig`) per l’accesso sicuro.
 
-## 🎯 Overview
+---
 
-This project implements a complete PKI infrastructure for Kubernetes environments, featuring:
-- 50-year Root CA for long-term trust anchoring
-- Role-based certificate distribution
-- Environment-agnostic certificate management
+## 📌 1. Creare la CA (Certificate Authority)
 
-## 📋 Features
-
-| User Type | Certificate Validity | Use Case |
-|-----------|---------------------|----------|
-| Root CA | 50 years | Trust anchor for all certificates |
-| Admin | 15 years | Cluster administration |
-| QA Developer | 15 years | Internal development & testing |
-| External Developer | 2 years | Temporary access |
-
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Kubernetes cluster (v1.19+)
-- kubectl CLI tool
-
-1. Generare CA
-
-# Genera la chiave privata della CA (4096 bit)
+```bash
+# Genera la chiave privata della CA
 openssl genrsa -out ca.key 4096
 
-# Genera il certificato root autofirmato della CA valido 50 anni (18250 giorni)
+# Genera il certificato autofirmato valido 50 anni
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 18250 -out ca.crt \
   -subj "/CN=kubernetes-ca"
+```
 
-2. Creare configurazione OpenSSL per certificato API server con SAN (Subject Alternative Names)
+---
 
-Crea un file chiamato apiserver-ext.cnf con questo contenuto (modifica IP e DNS se serve):
+## 📌 2. Configurazione SAN per l’API Server
 
+Crea un file `apiserver-ext.cnf`:
+
+```ini
 [ req ]
 default_bits       = 2048
 prompt             = no
@@ -59,48 +43,76 @@ DNS.4 = kubernetes.default.svc.cluster.local
 DNS.5 = controlplane
 IP.1  = 127.0.0.1
 IP.2  = <IP_PRIVATO_DEL_MASTER>
+```
 
-3. Generare chiave e CSR per API server
+---
+
+## 📌 3. Generare chiave + CSR + firmare certificato per API Server
+
+```bash
 openssl genrsa -out apiserver.key 2048
 
 openssl req -new -key apiserver.key -out apiserver.csr -config apiserver-ext.cnf
 
-4. Firmare il certificato API server con la CA
 openssl x509 -req -in apiserver.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out apiserver.crt -days 36500 -extensions req_ext -extfile apiserver-ext.cnf
+```
 
-5. Generare e firmare certificati client e di sistema
-Esempio per admin (durata 15 anni):
+---
 
+## 📌 4. Certificati Client: Admin, QA, External Developer
+
+### 🔹 Admin (15 anni)
+
+```bash
 openssl genrsa -out admin.key 2048
-
 openssl req -new -key admin.key -out admin.csr -subj "/CN=admin"
-
 openssl x509 -req -in admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out admin.crt -days 5475 -extfile <(printf "extendedKeyUsage=clientAuth")
-  
-Per qa-developer (15 anni):
+```
+
+### 🔹 QA Developer (15 anni)
+
+```bash
 openssl genrsa -out qa-developer.key 2048
-
 openssl req -new -key qa-developer.key -out qa-developer.csr -subj "/CN=qa-developer"
-
 openssl x509 -req -in qa-developer.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out qa-developer.crt -days 5475 -extfile <(printf "extendedKeyUsage=clientAuth")
+```
 
-Per external-developer (2 anni):
+### 🔹 External Developer (2 anni)
 
+```bash
 openssl genrsa -out external-developer.key 2048
-
 openssl req -new -key external-developer.key -out external-developer.csr -subj "/CN=external-developer"
-
 openssl x509 -req -in external-developer.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -out external-developer.crt -days 730 -extfile <(printf "extendedKeyUsage=clientAuth")
+```
 
-6. Rigenerare i kubeconfig client
+---
 
+## 📌 5. Sostituire i certificati nel cluster
 
-Esempio per admin:
+```bash
+cp apiserver.crt /etc/kubernetes/pki/apiserver.crt
+cp apiserver.key /etc/kubernetes/pki/apiserver.key
+```
 
+---
+
+## 📌 6. Riavviare il controllo del cluster
+
+```bash
+systemctl restart kubelet
+```
+
+---
+
+## 📌 7. Generare kubeconfig per utenti
+
+### 🔹 Esempio: Admin
+
+```bash
 kubectl config set-cluster kubernetes \
   --certificate-authority=ca.crt \
   --server=https://controlplane:6443 \
@@ -119,3 +131,35 @@ kubectl config set-context admin@kubernetes \
   --kubeconfig=admin.kubeconfig
 
 kubectl config use-context admin@kubernetes --kubeconfig=admin.kubeconfig
+```
+
+---
+
+## ✅ Test
+
+```bash
+KUBECONFIG=admin.kubeconfig kubectl get nodes
+```
+
+---
+
+## 📂 File generati
+
+| File                     | Descrizione                          |
+|--------------------------|--------------------------------------|
+| `ca.crt`, `ca.key`       | Root Certificate Authority           |
+| `apiserver.crt`, `.key`  | Certificato server firmato dalla CA  |
+| `admin.crt`, `.key`      | Certificato client Admin             |
+| `qa-developer.crt`       | Certificato client QA                |
+| `external-developer.crt` | Certificato client External          |
+| `*.kubeconfig`           | Configurazioni client                |
+
+---
+
+## 📎 Note
+
+- Puoi modificare il campo `CN` nei certificati client per rappresentare gruppi o utenti.
+- I certificati devono essere copiati correttamente nel path `/etc/kubernetes/pki/` per essere utilizzati.
+- I file `kubeconfig` generati possono essere usati anche su macchine remote per autenticarsi al cluster.
+
+---
